@@ -1,6 +1,3 @@
-Yes — here is a full corrected app.py with the escalation inputs shown only when they match the selected escalation type, while keeping the submit button, save/load, CSV export, PDF export, two-decimal formatting, dollar/percent labels, and the darker sidebar. Streamlit forms batch widgets together and need a form_submit_button, while st.download_button stays outside the form.
-
-python
 import sqlite3
 import json
 from datetime import datetime
