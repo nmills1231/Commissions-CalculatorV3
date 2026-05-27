@@ -203,12 +203,19 @@ def build_pdf(title, inputs, schedule_df, total_base_rent, total_commission):
     buffer.seek(0)
     return buffer
 
+def esc_type_changed():
+    st.session_state.show_esc_inputs = st.session_state.esc_type_selector
+
 init_db()
 
 if "loaded_deal" not in st.session_state:
     st.session_state.loaded_deal = None
 if "last_calc" not in st.session_state:
     st.session_state.last_calc = None
+if "show_esc_inputs" not in st.session_state:
+    st.session_state.show_esc_inputs = "Annual %"
+if "esc_type_selector" not in st.session_state:
+    st.session_state.esc_type_selector = st.session_state.show_esc_inputs
 
 df_deals = load_deals()
 
@@ -223,6 +230,8 @@ with st.sidebar:
         selected = st.selectbox("Load deal", [""] + df_deals["name"].tolist())
         if st.button("Load Selected") and selected:
             st.session_state.loaded_deal = get_deal_by_name(selected)
+            st.session_state.show_esc_inputs = st.session_state.loaded_deal["payload"].get("esc_type", "Annual %")
+            st.session_state.esc_type_selector = st.session_state.show_esc_inputs
             st.cache_data.clear()
             st.rerun()
     else:
@@ -233,43 +242,51 @@ with st.sidebar:
 
 payload = st.session_state.loaded_deal["payload"] if st.session_state.loaded_deal else {}
 
+st.markdown("### Deal Inputs")
+
+deal_name = st.text_input("Deal Name", value=payload.get("deal_name", ""))
+
+c1, c2 = st.columns(2)
+
+with c1:
+    sf = st.number_input("Square Feet (SF)", min_value=0.0, step=100.0, format="%.2f", value=float(payload.get("sf", 0.0)))
+    base_rent_psf = st.number_input("Base Rent PSF ($)", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("base_rent_psf", 0.0)))
+
+with c2:
+    term_years = st.number_input("Term Length (Years)", min_value=1, step=1, value=int(payload.get("term_years", 5)))
+    fee_pct = st.number_input("Fee %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("fee_pct", 3.0)))
+
+st.markdown("### Escalation")
+st.selectbox(
+    "Escalation Type",
+    ["Flat", "Annual %", "Every N Years %", "Flat Then Annual %", "Flat Then Every N Years %"],
+    index=["Flat", "Annual %", "Every N Years %", "Flat Then Annual %", "Flat Then Every N Years %"].index(st.session_state.show_esc_inputs),
+    key="esc_type_selector",
+    on_change=esc_type_changed,
+)
+
+esc_type = st.session_state.show_esc_inputs
+esc_amt = 0.0
+esc_freq = 1
+flat_years = 0
+
+if esc_type == "Annual %":
+    esc_amt = st.number_input("Increase %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("esc_amt", 3.0)))
+
+elif esc_type == "Every N Years %":
+    esc_amt = st.number_input("Increase %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("esc_amt", 3.0)))
+    esc_freq = st.number_input("Increase Every N Years", min_value=1, step=1, value=int(payload.get("esc_freq", 5)))
+
+elif esc_type == "Flat Then Annual %":
+    flat_years = st.number_input("Flat Years Before Increases", min_value=0, step=1, value=int(payload.get("flat_years", 0)))
+    esc_amt = st.number_input("Increase %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("esc_amt", 3.0)))
+
+elif esc_type == "Flat Then Every N Years %":
+    flat_years = st.number_input("Flat Years Before Increases", min_value=0, step=1, value=int(payload.get("flat_years", 0)))
+    esc_amt = st.number_input("Increase %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("esc_amt", 3.0)))
+    esc_freq = st.number_input("Increase Every N Years", min_value=1, step=1, value=int(payload.get("esc_freq", 5)))
+
 with st.form("deal_form"):
-    c1, c2 = st.columns(2)
-
-    with c1:
-        deal_name = st.text_input("Deal Name", value=payload.get("deal_name", ""))
-        sf = st.number_input("Square Feet (SF)", min_value=0.0, step=100.0, format="%.2f", value=float(payload.get("sf", 0.0)))
-        base_rent_psf = st.number_input("Base Rent PSF ($)", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("base_rent_psf", 0.0)))
-        term_years = st.number_input("Term Length (Years)", min_value=1, step=1, value=int(payload.get("term_years", 5)))
-
-    with c2:
-        fee_pct = st.number_input("Fee %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("fee_pct", 3.0)))
-        esc_type = st.selectbox(
-            "Escalation Type",
-            ["Flat", "Annual %", "Every N Years %", "Flat Then Annual %", "Flat Then Every N Years %"],
-            index=["Flat", "Annual %", "Every N Years %", "Flat Then Annual %", "Flat Then Every N Years %"].index(payload.get("esc_type", "Annual %")),
-        )
-
-        esc_amt = None
-        esc_freq = None
-        flat_years = None
-
-        if esc_type == "Annual %":
-            esc_amt = st.number_input("Increase %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("esc_amt", 3.0)))
-
-        elif esc_type == "Every N Years %":
-            esc_amt = st.number_input("Increase %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("esc_amt", 3.0)))
-            esc_freq = st.number_input("Increase Every N Years", min_value=1, step=1, value=int(payload.get("esc_freq", 5)))
-
-        elif esc_type == "Flat Then Annual %":
-            flat_years = st.number_input("Flat Years Before Increases", min_value=0, step=1, value=int(payload.get("flat_years", 0)))
-            esc_amt = st.number_input("Increase %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("esc_amt", 3.0)))
-
-        elif esc_type == "Flat Then Every N Years %":
-            flat_years = st.number_input("Flat Years Before Increases", min_value=0, step=1, value=int(payload.get("flat_years", 0)))
-            esc_amt = st.number_input("Increase %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("esc_amt", 3.0)))
-            esc_freq = st.number_input("Increase Every N Years", min_value=1, step=1, value=int(payload.get("esc_freq", 5)))
-
     submit = st.form_submit_button("Calculate")
 
 if submit:
@@ -280,9 +297,9 @@ if submit:
         "term_years": int(term_years),
         "fee_pct": fee_pct,
         "esc_type": esc_type,
-        "esc_amt": float(esc_amt) if esc_amt is not None else 0.0,
-        "esc_freq": int(esc_freq) if esc_freq is not None else 1,
-        "flat_years": int(flat_years) if flat_years is not None else 0,
+        "esc_amt": float(esc_amt),
+        "esc_freq": int(esc_freq),
+        "flat_years": int(flat_years),
     }
     schedule_df, total_base_rent, total_commission = calc_schedule(
         sf,
@@ -290,9 +307,9 @@ if submit:
         int(term_years),
         fee_pct,
         esc_type,
-        float(esc_amt) if esc_amt is not None else 0.0,
-        int(esc_freq) if esc_freq is not None else 1,
-        int(flat_years) if flat_years is not None else 0,
+        float(esc_amt),
+        int(esc_freq),
+        int(flat_years),
     )
     st.session_state.last_calc = {
         "inputs": inputs,
